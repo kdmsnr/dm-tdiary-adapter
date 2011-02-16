@@ -4,8 +4,29 @@ require 'dm-core'
 module DataMapper
   module Adapters
     class TdiaryAdapter < AbstractAdapter
-      def craete(resources)
-        raise NotImplementedError, "#{self.class}#update not implemented"
+
+      def create(resources)
+        resources.each do |resource|
+          date = resource.date
+          case resource.model.to_s
+          when "TDiary::Models::Diary"
+            File.open(gen_path(date), "a+") do |f|
+              next if resource.model.date(date)
+              f.puts <<-EOS
+TDIARY2.01.00
+Date: #{date}
+Title: #{resource.title}
+Last-Modified:
+Visible: #{resource.visible}
+Format: #{resource.format}
+
+#{resource.body}
+
+.
+EOS
+            end
+          end
+        end
       end
 
       # returns Array of Hash
@@ -16,13 +37,10 @@ module DataMapper
             date = id
             limit = date
           else
-            date = extract_date_from_query(query)
+            date = query.options.values[0] # TODO: handle more conditions
             limit = false
           end
-          year = date[0, 4]
-          month = date[4, 2]
-          path = "#{options['path']}/#{year}/#{year}#{month}.td2"
-          return parse_tdiary_file(path, query.fields, limit)
+          return parse_tdiary_file(gen_path(date), query.fields, limit)
         end
       end
 
@@ -34,8 +52,13 @@ module DataMapper
         raise NotImplementedError, "#{self.class}#delete not implemented"
       end
 
-
       private
+      def gen_path(date, ext = "td2")
+        year = date[0, 4]
+        month = date[4, 2]
+        "#{options['path']}/#{year}/#{year}#{month}.#{ext}"
+      end
+
       def extract_id_from_query(query)
         return nil if query.limit != 1
 
@@ -51,16 +74,6 @@ module DataMapper
         end
 
         key_condition.first.value
-      end
-
-      def extract_date_from_query(query)
-        conditions = query.conditions
-
-        unless conditions.kind_of?(DataMapper::Query::Conditions::AndOperation)
-          return {}
-        end
-
-        query.options.values[0]
       end
 
       def parse_tdiary_file(path, fields, date = nil)
